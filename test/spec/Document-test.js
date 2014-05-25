@@ -242,7 +242,7 @@ define(function (require, exports, module) {
         });
 
         afterEach(function () {
-            testWindow.closeAllFiles();
+            DocumentManager.closeAll();
 
             runs(function () {
                 expect(DocumentManager.getAllOpenDocuments().length).toBe(0);

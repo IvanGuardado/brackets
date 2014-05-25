@@ -41,12 +41,7 @@ define(function (require, exports, module) {
     var ALL_PANES           = "ALL_PANES",
         FOCUSED_PANE        = "FOCUSED_PANE";
     
-    /**
-     * @private
-     * @see DocumentManager.getCurrentDocument()
-     */
-    var _currentDocument = null;
-        
+
     
     /**
      * @private
@@ -99,8 +94,8 @@ define(function (require, exports, module) {
         return _paneViewListAddedOrder;
     }
     
-    function _setCurrentDocument(doc) {
-        _currentDocument = doc;
+    function _getCurrentDocument(doc) {
+        return EditorManager.getFocusedEditor() ? EditorManager.getFocusedEditor().getDocument() : null;
     }
     
     function _reset(paneId) {
@@ -208,7 +203,7 @@ define(function (require, exports, module) {
         }
         
         // Add to MRU order: either first or last, depending on whether it's already the current doc or not
-        var currentDocument = _currentDocument;//DocumentManager.getCurrentDocument();
+        var currentDocument = _getCurrentDocument();
         if (currentDocument && currentDocument.file.fullPath === file.fullPath) {
             _paneViewListMRUOrder.unshift(file);
         } else {
@@ -249,8 +244,9 @@ define(function (require, exports, module) {
                 // Add
                 _paneViewList.push(file);
 
+                var currentDocument = _getCurrentDocument();
                 // Add to MRU order: either first or last, depending on whether it's already the current doc or not
-                if (_currentDocument && _currentDocument.file.fullPath === file.fullPath) {
+                if (currentDocument && currentDocument.file.fullPath === file.fullPath) {
                     _paneViewListMRUOrder.unshift(file);
                 } else {
                     _paneViewListMRUOrder.push(file);
@@ -503,7 +499,7 @@ define(function (require, exports, module) {
         var files           = [],
             isActive        = false,
             paneViewList    = getPaneViewList(ALL_PANES),
-            currentDoc      = _currentDocument,
+            currentDoc      = _getCurrentDocument(),
             projectRoot     = ProjectManager.getProjectRoot(),
             context         = { location : { scope: "user",
                                              layer: "project",
@@ -536,15 +532,6 @@ define(function (require, exports, module) {
     
     $(ProjectManager).on("projectOpen", _loadViewState);
     $(ProjectManager).on("beforeProjectClose beforeAppClose", _saveViewState);
-    
-    
-    // Refactoring exports...
-    exports._getPaneViewList        = _getPaneViewList;
-    exports._getPaneViewListMRU     = _getPaneViewListMRU;
-    exports._getPaneViewListAdded   = _getPaneViewListAdded;
-
-    // Scaffolding
-    exports._setCurrentDocument = _setCurrentDocument;
     
     // API Exports
     exports.addToPaneViewList                = addToPaneViewList;

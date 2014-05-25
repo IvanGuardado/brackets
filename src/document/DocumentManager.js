@@ -108,15 +108,6 @@ define(function (require, exports, module) {
         LanguageManager     = require("language/LanguageManager"),
         Strings             = require("strings");
 
-
-    
-    // _currentDocument is temporarily moved to avoid a circular dependency
-    /**
-     * @private
-     * @see DocumentManager.getCurrentDocument()
-     */
-    var _currentDocument = null;
-    
     
     /**
      * Returns the Document that is currently open in the editor UI. May be null.
@@ -124,8 +115,26 @@ define(function (require, exports, module) {
      * document always has a backing Editor (Document._masterEditor != null) and is thus modifiable.
      * @return {?Document}
      */
+    function _getCurrentDocument() {
+        // using getCurrentFullEditor() will return the editor whether it has focus or not
+        //      this doesn't work in scenarios where you want the active editor's document
+        //      even though it does not have focus (such as when clicking on another element (toolbar, menu, etc...)
+        //      So we'll have to do amend this to MainViewManager.getTargetPane().getCurrentFullEditor().getDocument()
+        //      at some point which changes the deprecation warning below
+        var doc = EditorManager.getCurrentFullEditor() ? EditorManager.getCurrentFullEditor().getDocument() : null;
+        if (doc) {
+            console.assert(doc._masterEditor === EditorManager.getCurrentFullEditor());
+        }
+        return doc;
+    }
+    
+    /**
+     * [deprecated] Returns the Document that is currently open in the editor UI. May be null.
+     * @return {?Document}
+     */
     function getCurrentDocument() {
-        return _currentDocument;
+        DeprecationWarning.deprecationWarning("Use EditorManager.getCurrentFullEditor().getDocument() instead of DocumentManager.getCurrentDocument()", true);
+        return _getCurrentDocument();
     }
     
     /**
@@ -164,20 +173,15 @@ define(function (require, exports, module) {
         
     /** Changes currentDocument to null, causing no full Editor to be shown in the UI */
     function _clearCurrentDocument() {
-        // If editor already blank, do nothing
-        if (!_currentDocument) {
+        // Change model & dispatch event
+        var previousDocument = _getCurrentDocument();
+        
+        if (!previousDocument) {
             return;
         }
 
-        // Change model & dispatch event
-        var previousDocument = _currentDocument;
-        _currentDocument = null;
-
-        // TODO: Remove this
-        MainViewManager._setCurrentDocument(_currentDocument);
-
         // (this event triggers EditorManager to actually clear the editor UI)
-        $(exports).triggerHandler("currentDocumentChange", [_currentDocument, previousDocument]);
+        $(exports).triggerHandler("currentDocumentChange", [null, previousDocument]);
     }
     
     /**
@@ -289,7 +293,7 @@ define(function (require, exports, module) {
         }
         
         if (clearCurrentDocument) {
-            DeprecationWarning.deprecationWarning("clearCurrentDocument is not a supported option for MainViewManager.removeListFromPaneViewList() Use DocumentManager.resetCurrentDocument() instead", true);
+            DeprecationWarning.deprecationWarning("clearCurrentDocument is no longer a supported option. The currentDocument will be reset automatically", true);
             _clearCurrentDocument();
         }
         
@@ -326,7 +330,7 @@ define(function (require, exports, module) {
         if (_documentNavPending) {
             _documentNavPending = false;
             
-            _markMostRecent(_currentDocument);
+            _markMostRecent(_getCurrentDocument());
         }
     }
     
@@ -352,9 +356,11 @@ define(function (require, exports, module) {
      *      working set.
      */
     function setCurrentDocument(doc) {
+        // TODO: This needs to move to MainViewManager so it can operate on the current editor
+        var previousDocument = _getCurrentDocument();
         
         // If this doc is already current, do nothing
-        if (_currentDocument === doc) {
+        if (previousDocument === doc) {
             return;
         }
 
@@ -371,14 +377,7 @@ define(function (require, exports, module) {
             _markMostRecent(doc);
         }
         
-        // Make it the current document
-        var previousDocument = _currentDocument;
-        _currentDocument = doc;
-        
-        // TODO: Remove this
-        MainViewManager._setCurrentDocument(_currentDocument);
-
-        $(exports).triggerHandler("currentDocumentChange", [_currentDocument, previousDocument]);
+        $(exports).triggerHandler("currentDocumentChange", [doc, previousDocument]);
         // (this event triggers EditorManager to actually switch editors in the UI)
         
         PerfUtils.addMeasurement(perfTimerName);
@@ -398,12 +397,13 @@ define(function (require, exports, module) {
      * @param {boolean} skipAutoSelect - if true, don't automatically open and select the next document
      */
     function closeFullEditor(file, skipAutoSelect) {
+        var currentDocument = _getCurrentDocument();
         // If this was the current document shown in the editor UI, we're going to switch to a
         // different document (or none if working set has no other options)
-        if (_currentDocument && _currentDocument.file.fullPath === file.fullPath) {
+        if (currentDocument && currentDocument.file.fullPath === file.fullPath) {
             // Get next most recent doc in the MRU order
             var nextFile = MainViewManager.traversePaneViewListByMRU(MainViewManager.FOCUSED_PANE, 1);
-            if (nextFile && nextFile.fullPath === _currentDocument.file.fullPath) {
+            if (nextFile && nextFile.fullPath === currentDocument.file.fullPath) {
                 // getNextPrevFile() might return the file we're about to close if it's the only one open (due to wraparound)
                 nextFile = null;
             }
@@ -411,10 +411,6 @@ define(function (require, exports, module) {
             // Switch editor to next document (or blank it out)
             if (nextFile && !skipAutoSelect) {
                 CommandManager.execute(Commands.FILE_OPEN, { fullPath: nextFile.fullPath })
-                    .done(function () {
-                        // (Now we're guaranteed that the current document is not the one we're closing)
-                        console.assert(!(_currentDocument && _currentDocument.file.fullPath === file.fullPath));
-                    })
                     .fail(function () {
                         // File chosen to be switched to could not be opened, and the original file
                         // is still in editor. Close it again so code will try to open the next file,
@@ -440,7 +436,6 @@ define(function (require, exports, module) {
      * unsaved changes, so the UI should confirm with the user before calling this.
      */
     function closeAll() {
-        _clearCurrentDocument();
         MainViewManager.removeAllFromPaneViewList(MainViewManager.ALL_PANES);
     }
         
@@ -680,7 +675,7 @@ define(function (require, exports, module) {
      * @param {string} path The path of the file/folder that has been deleted
      */
     function notifyPathDeleted(path) {
-        if (getCurrentDocument()) {
+        if (_getCurrentDocument()) {
             /* FileSyncManager.syncOpenDocuments() does all the work of closing files
                in the working set and notifying the user of any unsaved changes. */
             FileSyncManager.syncOpenDocuments(Strings.FILE_DELETED_TITLE);
